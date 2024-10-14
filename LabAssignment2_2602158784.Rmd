@@ -1,0 +1,208 @@
+---
+title: "Session13_predictivemodels"
+author: "Jeffrey Wijaya"
+date: "2023-06-09"
+output: html_document
+---
+
+# attach data
+```{r}
+library(MASS)
+library(mlbench)
+library(pROC)
+library(MLmetrics)
+library(rpart)
+library(rpart.plot)
+data("Boston")
+```
+
+```{r}
+BasicSummary <- function(df, dgts = 3){
+m <- ncol(df)
+varNames <- colnames(df)
+varType <- vector("character",m)
+topLevel <- vector("character",m)
+topCount <- vector("numeric",m)
+missCount <- vector("numeric",m)
+levels <- vector("numeric", m)
+for (i in 1:m){
+x <- df[,i]
+varType[i] <- class(x)
+xtab <- table(x, useNA = "ifany")
+levels[i] <- length(xtab)
+nums <- as.numeric(xtab)
+maxnum <- max(nums)
+topCount[i] <- maxnum
+maxIndex <- which.max(nums)
+lvls <- names(xtab)
+topLevel[i] <- lvls[maxIndex]
+missIndex <- which((is.na(x)) | (x == "") | (x == " "))
+missCount[i] <- length(missIndex)
+}
+n <- nrow(df)
+topFrac <- round(topCount/n, digits = dgts)
+missFrac <- round(missCount/n, digits = dgts)
+summaryFrame <- data.frame(variable = varNames, type = varType,
+levels = levels, topLevel = topLevel,
+topCount = topCount, topFrac = topFrac,
+missFreq = missCount, missFrac = missFrac)
+return(summaryFrame)
+}
+```
+
+# trasnform
+```{r}
+df2 <- ifelse(Boston$medv <= 21, "Low", "High")
+df <- ifelse(Boston$medv <= 21, 0, 1)
+Boston$medv <- df
+```
+
+
+```{r}
+BasicSummary(Boston)
+```
+# Split the dataset into training set and validation set
+```{r}
+set.seed(123)
+n <- nrow(Boston)
+train <-sample(n,round(0.7 *n))
+BostonTrain <- Boston[train,]
+BostonValidation <- Boston[-train, ]
+```
+
+# Fit the model using full set of variables : Logistic Regression
+```{r}
+logisticfull <- glm(medv ~., family = "binomial", data= BostonTrain)
+summary(logisticfull)
+```
+
+# Make model 2 with variable that have a small p-value
+```{r}
+logisticRef <- glm(medv~ dis + rad + ptratio + lstat, data = BostonTrain, family = "binomial")
+summary(logisticRef)
+```
+
+# Model Validation
+```{r}
+phatFullV<-predict(logisticfull, newdata = BostonValidation, type = "response")
+phatRefV<-predict(logisticRef, newdata = BostonValidation, type = "response")
+```
+
+# Model Performance
+
+## ROC Curve and AUC
+```{r}
+ROCFull<- roc(BostonValidation$medv, phatFullV, plot = TRUE, print.auc = TRUE)
+ROCFull
+```
+
+
+```{r}
+ROCRef<- roc(BostonValidation$medv, phatRefV, plot = TRUE, print.auc = TRUE)
+ROCRef
+```
+
+```{r}
+AUC(phatFullV, BostonValidation$medv)
+
+AUC(phatRefV, BostonValidation$medv)
+```
+
+# Confusion Matrix Accuracy
+```{r}
+threshold1 <- table(BostonValidation$medv, phatFullV > 0.5)
+threshold2 <- table(BostonValidation$medv, phatRefV > 0.5)
+accuracy1 <- round(sum(diag(threshold1)) / sum(threshold1), 2)
+accuracy2 <- round(sum(diag(threshold2)) / sum(threshold2), 2)
+threshold1
+sprintf("Accuracy is %s", accuracy1)
+threshold2
+sprintf("Accuracy is %s", accuracy2)
+```
+# Conclusion of logistic regression model
+df was created using all the variables and we see that there is many large p-value, so we make df2 using all small p-value and when we test the accuracy it is the same while using all variables. When we compare the accuracy it is the same as the other.
+
+Because all the two models accuracy result are the same then we can take any model result to compare with decision tree model to see which one has better accuracy. Final accuracy in Logistic Regression : 84%
+
+```{r}
+Boston$medv <- df2
+BasicSummary(Boston)
+```
+
+
+```{r}
+set.seed(123)
+n <- nrow(Boston)
+train <-sample(n,round(0.7 *n))
+BostonTrain <- Boston[train,]
+BostonValidation <- Boston[-train, ]
+```
+
+# Model with decision Tree with all variables
+```{r}
+Model1 <- rpart(formula = medv ~.,
+                   data = BostonTrain,
+                   method = "class")
+Model1$variable.importance
+```
+```{r}
+rpart.plot(x = Model1, yesno=2, type=0, extra = 0)
+```
+
+# Model with decision tree with variables that importance is more than 40
+```{r}
+Model2 <- rpart(formula = medv ~ dis + rad + ptratio + lstat,
+                   data = BostonTrain,
+                   method = "class")
+Model2$variable.importance
+```
+
+
+```{r}
+rpart.plot(x = Model2, yesno=2, type=0, extra = 0)
+```
+
+```{r}
+PreModel1 <- predict(Model1, newdata = BostonValidation, type = "class")
+PreModel2 <- predict(Model2, newdata = BostonValidation, type = "class")
+```
+
+# Confusion Matrix for first model
+```{r}
+# Built confusion matrix with a threshold of 0.5
+cm <- table(PreModel1, BostonValidation$medv)
+cm
+cm[2]
+
+accuracy <- sum(cm[1], cm[4]) / sum(cm[1:4])
+precision <- cm[4] / sum(cm[4], cm[2])
+sensitivity <- cm[4] / sum(cm[4], cm[3])
+fscore <- (2 * (sensitivity*precision)) / (sensitivity+precision)
+specificity <- cm[1] / sum(cm[1], cm[2])
+sprintf("Accuracy is %s", round(accuracy, 3))
+
+```
+# Confusion Matrix for second model
+```{r}
+# Built confusion matrix with a threshold of 0.5
+cm <- table(PreModel2, BostonValidation$medv)
+cm
+cm[2]
+
+accuracy <- sum(cm[1], cm[4]) / sum(cm[1:4])
+precision <- cm[4] / sum(cm[4], cm[2])
+sensitivity <- cm[4] / sum(cm[4], cm[3])
+fscore <- (2 * (sensitivity*precision)) / (sensitivity+precision)
+specificity <- cm[1] / sum(cm[1], cm[2])
+sprintf("Accuracy is %s", round(accuracy, 3))
+
+```
+
+
+# Conclusion of decision tree model
+
+Model 1 was created using all the variables and we see that there are some variables that have small importance so we make Model 2. When we comparing the result the accuracy in Model 2 is higher than Model 1. So, we will take Model 2 as our final model to be compared to logistic regression model. Final Decision Tree Model accuracy: 84.2%
+
+
+# Conclusion of all
+After we compare between logistic regression model and decision tree model, the result is logistic regression model is better because it's accuracy is greater than decision tree model accuracy. So we will take any model from logistic regression and the final model that we choose is logisticfull. The reason why we should choose logisticfull is because from the ROC Curve plot we can see the AUC value in Model 1 is higher than logisticref.The higher the AUC score, the better the model is able to classify observations into classes. All of the models in logistic regression has AUC value higher than 90%, so all of them is a good model. But we take the highest AUC value, which is logisticfull with 0.938. So the final model we will use to predict future medv is : logisticfull from logistic regression model
