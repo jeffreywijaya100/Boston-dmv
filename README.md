@@ -1,4 +1,3 @@
-# Boston-dmv
 Train predictive models using logistic regression and decision trees and evaluate the performance of those models. You have to decide which model you choose.
 
 The dataset coming from the library(MASS)
